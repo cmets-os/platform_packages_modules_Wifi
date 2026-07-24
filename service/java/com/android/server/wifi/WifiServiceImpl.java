@@ -236,6 +236,7 @@ import com.android.server.wifi.util.FeatureBitsetUtils;
 import com.android.server.wifi.util.GeneralUtil.Mutable;
 import com.android.server.wifi.util.LastCallerInfoManager;
 import com.android.server.wifi.util.RssiUtil;
+import com.android.server.wifi.util.SoftApRegdbFallback;
 import com.android.server.wifi.util.WifiPermissionsUtil;
 import com.android.server.wifi.util.WorkSourceHelper;
 import com.android.wifi.flags.FeatureFlags;
@@ -8647,6 +8648,13 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                 }
             }
             throw new UnsupportedOperationException();
+        }
+        // SoftAP Settings / getAllowedChannels: fill empty 5/6 GHz SAP lists from
+        // wireless-regdb using the real country code (no force-country spoof).
+        if (mode == WifiAvailableChannel.OP_MODE_SAP
+                && filter == WifiAvailableChannel.FILTER_REGULATORY) {
+            channels = SoftApRegdbFallback.augmentUsableChannels(
+                    channels, mCountryCode.getCountryCode(), band);
         }
 
         return channels;

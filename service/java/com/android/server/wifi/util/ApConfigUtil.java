@@ -441,6 +441,22 @@ public class ApConfigUtil {
                 inFrequencyMHz);
     }
 
+    /**
+     * Best-effort real WifiCountryCode; null if injector / country code is not ready.
+     */
+    @Nullable
+    private static String getWifiCountryCodeSafe() {
+        try {
+            WifiInjector injector = WifiInjector.getInstance();
+            if (injector == null || injector.getWifiCountryCode() == null) {
+                return null;
+            }
+            return injector.getWifiCountryCode().getCountryCode();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static List<Integer> getHalAvailableChannelsForBand(
             @WifiScanner.WifiBand int scannerBand, WifiNative wifiNative,
             WifiResourceCache resources,
@@ -511,6 +527,10 @@ public class ApConfigUtil {
             regulatoryList = getWifiCondAvailableChannelsForBand(scannerBand, wifiNative,
                     resourceCache, inFrequencyMHz);
         }
+        // When vendor HAL SoftAP regulatory list is empty for 5/6 GHz, fill from
+        // wireless-regdb for the real country code (no force-country spoof).
+        regulatoryList = SoftApRegdbFallback.resolve(
+                regulatoryList, getWifiCountryCodeSafe(), band, inFrequencyMHz);
         List<Integer> configuredList = getConfiguredChannelList(resourceCache, band);
         if (configuredList == null || configuredList.isEmpty() || regulatoryList == null) {
             return regulatoryList;

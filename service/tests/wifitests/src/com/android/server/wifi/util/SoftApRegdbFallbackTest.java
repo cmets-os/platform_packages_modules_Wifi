@@ -1,0 +1,152 @@
+/*
+ * Copyright (C) 2026 cmets-os
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.android.server.wifi.util;
+
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+
+import android.net.wifi.ScanResult;
+import android.net.wifi.SoftApConfiguration;
+import android.net.wifi.WifiAvailableChannel;
+import android.net.wifi.WifiScanner;
+
+import androidx.test.filters.SmallTest;
+
+import com.android.server.wifi.WifiBaseTest;
+
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Unit tests for {@link SoftApRegdbFallback}.
+ */
+@SmallTest
+public class SoftApRegdbFallbackTest extends WifiBaseTest {
+
+    @Test
+    public void channelsFor_nullOrInvalidCountry_returnsNull() {
+        assertNull(SoftApRegdbFallback.channelsFor(null, SoftApConfiguration.BAND_5GHZ));
+        assertNull(SoftApRegdbFallback.channelsFor("", SoftApConfiguration.BAND_5GHZ));
+        assertNull(SoftApRegdbFallback.channelsFor("R", SoftApConfiguration.BAND_5GHZ));
+        assertNull(SoftApRegdbFallback.channelsFor("RUS", SoftApConfiguration.BAND_5GHZ));
+    }
+
+    @Test
+    public void channelsFor_ru_has5And6Ghz() {
+        int[] ch5 = SoftApRegdbFallback.channelsFor("RU", SoftApConfiguration.BAND_5GHZ);
+        int[] ch6 = SoftApRegdbFallback.channelsFor("ru", SoftApConfiguration.BAND_6GHZ);
+        assertNotNull(ch5);
+        assertNotNull(ch6);
+        assertTrue(ch5.length > 0);
+        assertTrue(ch6.length > 0);
+        assertTrue(Arrays.stream(ch5).anyMatch(c -> c == 36));
+        assertTrue(Arrays.stream(ch5).anyMatch(c -> c == 149));
+        assertTrue(Arrays.stream(ch6).anyMatch(c -> c == 1));
+    }
+
+    @Test
+    public void resolve_nonEmptyHal_unchanged() {
+        List<Integer> hal = Arrays.asList(149, 153);
+        List<Integer> out = SoftApRegdbFallback.resolve(
+                hal, "RU", SoftApConfiguration.BAND_5GHZ, false);
+        assertSame(hal, out);
+        assertEquals(Arrays.asList(149, 153), out);
+    }
+
+    @Test
+    public void resolve_emptyHal_ru_fills5GhzChannels() {
+        List<Integer> out = SoftApRegdbFallback.resolve(
+                Collections.emptyList(), "RU", SoftApConfiguration.BAND_5GHZ, false);
+        assertFalse(out.isEmpty());
+        assertTrue(out.contains(36));
+        assertTrue(out.contains(149));
+    }
+
+    @Test
+    public void resolve_nullHal_ru_fillsFrequencies() {
+        List<Integer> out = SoftApRegdbFallback.resolve(
+                null, "RU", SoftApConfiguration.BAND_5GHZ, true);
+        assertFalse(out.isEmpty());
+        assertTrue(out.contains(5180)); // ch 36
+        assertTrue(out.contains(5745)); // ch 149
+    }
+
+    @Test
+    public void resolve_nullCountry_noCrashEmpty() {
+        List<Integer> out = SoftApRegdbFallback.resolve(
+                Collections.emptyList(), null, SoftApConfiguration.BAND_5GHZ, false);
+        assertNotNull(out);
+        assertTrue(out.isEmpty());
+    }
+
+    @Test
+    public void resolve_2ghz_notFilledFromRegdb() {
+        List<Integer> out = SoftApRegdbFallback.resolve(
+                Collections.emptyList(), "RU", SoftApConfiguration.BAND_2GHZ, false);
+        assertTrue(out.isEmpty());
+    }
+
+    @Test
+    public void augmentUsableChannels_empty5GhzSap_ru_fills() {
+        List<WifiAvailableChannel> hal = new ArrayList<>();
+        List<WifiAvailableChannel> out = SoftApRegdbFallback.augmentUsableChannels(
+                hal, "RU", WifiScanner.WIFI_BAND_5_GHZ_WITH_DFS);
+        assertNotNull(out);
+        assertFalse(out.isEmpty());
+        boolean saw5 = false;
+        for (WifiAvailableChannel ch : out) {
+            if (ScanResult.is5GHz(ch.getFrequencyMhz())) {
+                saw5 = true;
+                assertEquals(WifiAvailableChannel.OP_MODE_SAP, ch.getOperationalModes());
+            }
+        }
+        assertTrue(saw5);
+    }
+
+    @Test
+    public void augmentUsableChannels_nonEmpty5Ghz_unchanged() {
+        List<WifiAvailableChannel> hal = Arrays.asList(
+                new WifiAvailableChannel(5745, WifiAvailableChannel.OP_MODE_SAP,
+                        ScanResult.CHANNEL_WIDTH_20MHZ));
+        List<WifiAvailableChannel> out = SoftApRegdbFallback.augmentUsableChannels(
+                hal, "RU", WifiScanner.WIFI_BAND_5_GHZ_WITH_DFS);
+        assertSame(hal, out);
+        assertEquals(1, out.size());
+    }
+
+    @Test
+    public void augmentUsableChannels_nullHal_returnsNull() {
+        assertNull(SoftApRegdbFallback.augmentUsableChannels(
+                null, "RU", WifiScanner.WIFI_BAND_5_GHZ));
+    }
+
+    @Test
+    public void softApRegdbChannels_get_matchesChannelsFor() {
+        int[] a = SoftApRegdbChannels.get("RU", SoftApConfiguration.BAND_5GHZ);
+        int[] b = SoftApRegdbFallback.channelsFor("RU", SoftApConfiguration.BAND_5GHZ);
+        assertArrayEquals(a, b);
+    }
+}

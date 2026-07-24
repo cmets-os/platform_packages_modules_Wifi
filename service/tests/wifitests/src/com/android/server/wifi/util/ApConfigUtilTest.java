@@ -64,6 +64,7 @@ import com.android.dx.mockito.inline.extended.ExtendedMockito;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.SoftApManager;
 import com.android.server.wifi.WifiBaseTest;
+import com.android.server.wifi.WifiCountryCode;
 import com.android.server.wifi.WifiInjector;
 import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.WifiSettingsConfigStore;
@@ -81,6 +82,7 @@ import org.mockito.MockitoSession;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -181,6 +183,7 @@ public class ApConfigUtilTest extends WifiBaseTest {
     @Mock
     DeviceWiphyCapabilities mDeviceWiphyCapabilities;
     @Mock WifiInjector mWifiInjector;
+    @Mock WifiCountryCode mWifiCountryCode;
     private SoftApCapability mCapability;
     private boolean mApBridgeIfaceCobinationSupported = false;
     private boolean mApBridgeWithStaIfaceCobinationSupported = false;
@@ -206,6 +209,8 @@ public class ApConfigUtilTest extends WifiBaseTest {
         mCapability.setSupportedChannelList(SoftApConfiguration.BAND_60GHZ, ALLOWED_60G_CHANS);
         when(WifiInjector.getInstance()).thenReturn(mWifiInjector);
         when(mWifiInjector.getContext()).thenReturn(mContext);
+        when(mWifiInjector.getWifiCountryCode()).thenReturn(mWifiCountryCode);
+        when(mWifiCountryCode.getCountryCode()).thenReturn(null);
         when(mContext.getResourceCache()).thenReturn(mResources);
         when(mResources.getBoolean(R.bool.config_wifi24ghzSupport)).thenReturn(true);
         when(mResources.getBoolean(R.bool.config_wifi5ghzSupport)).thenReturn(true);
@@ -1575,5 +1580,49 @@ public class ApConfigUtilTest extends WifiBaseTest {
                 .thenReturn(1);
         assertEquals(1, ApConfigUtil.getMaximumSupportedMLD(mContext,
                 true /* isMultipleMLMDSupportedOnSap */));
+    }
+
+    /**
+     * Empty HAL SoftAP list + real country code RU → wireless-regdb 5 GHz fill.
+     */
+    @Test
+    public void testGetAvailableChannelFreqsForBand_emptyHal_ru_regdbFallback()
+            throws Exception {
+        when(mWifiNative.isHalStarted()).thenReturn(true);
+        when(mWifiNative.isHalSupported()).thenReturn(true);
+        when(mWifiNative.getUsableChannels(anyInt(), anyInt(), anyInt()))
+                .thenReturn(Collections.emptyList());
+        when(mResources.getBoolean(R.bool.config_wifiSoftapAcsIncludeDfs)).thenReturn(false);
+        when(mWifiCountryCode.getCountryCode()).thenReturn("RU");
+
+        List<Integer> result = ApConfigUtil.getAvailableChannelFreqsForBand(
+                SoftApConfiguration.BAND_5GHZ, mWifiNative, null, false);
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+        assertTrue(result.contains(36));
+        assertTrue(result.contains(149));
+    }
+
+    /**
+     * Non-empty HAL SoftAP list must not be replaced by regdb.
+     */
+    @Test
+    public void testGetAvailableChannelFreqsForBand_nonEmptyHal_unchanged() throws Exception {
+        when(mWifiNative.isHalStarted()).thenReturn(true);
+        when(mWifiNative.isHalSupported()).thenReturn(true);
+        List<android.net.wifi.WifiAvailableChannel> hal = Arrays.asList(
+                new android.net.wifi.WifiAvailableChannel(5745,
+                        android.net.wifi.WifiAvailableChannel.OP_MODE_SAP,
+                        ScanResult.CHANNEL_WIDTH_20MHZ),
+                new android.net.wifi.WifiAvailableChannel(5765,
+                        android.net.wifi.WifiAvailableChannel.OP_MODE_SAP,
+                        ScanResult.CHANNEL_WIDTH_20MHZ));
+        when(mWifiNative.getUsableChannels(anyInt(), anyInt(), anyInt())).thenReturn(hal);
+        when(mResources.getBoolean(R.bool.config_wifiSoftapAcsIncludeDfs)).thenReturn(false);
+        when(mWifiCountryCode.getCountryCode()).thenReturn("RU");
+
+        List<Integer> result = ApConfigUtil.getAvailableChannelFreqsForBand(
+                SoftApConfiguration.BAND_5GHZ, mWifiNative, null, false);
+        assertEquals(Arrays.asList(149, 153), result);
     }
 }

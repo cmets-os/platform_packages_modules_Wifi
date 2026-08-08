@@ -40,6 +40,11 @@ public class SoftApNotifier {
     public static final int NOTIFICATION_ID_SOFTAP_AUTO_DISABLED =
             SystemMessage.NOTE_SOFTAP_AUTO_DISABLED;
 
+    /** Distinct id so band-degrade does not clobber the auto-shutdown notification. */
+    @VisibleForTesting
+    public static final int NOTIFICATION_ID_SOFTAP_HIGH_BAND_UNAVAILABLE =
+            SystemMessage.NOTE_SOFTAP_AUTO_DISABLED + 1;
+
     private final WifiContext mContext;
     private final FrameworkFacade mFrameworkFacade;
     private final WifiNotificationManager mNotificationManager;
@@ -57,6 +62,18 @@ public class SoftApNotifier {
     public void showSoftApShutdownTimeoutExpiredNotification() {
         mNotificationManager.notify(NOTIFICATION_ID_SOFTAP_AUTO_DISABLED,
                 buildSoftApShutdownTimeoutExpiredNotification());
+    }
+
+    /**
+     * Notify that SoftAP is up on 2.4 GHz only after a 5/6 GHz (or dual-band) request failed.
+     */
+    public void showSoftApHighBandUnavailableNotification() {
+        String title = mContext.getResources().getString(
+                R.string.wifi_softap_high_band_unavailable_title);
+        String contentSummary = mContext.getResources().getString(
+                R.string.wifi_softap_high_band_unavailable_summary);
+        mNotificationManager.notify(NOTIFICATION_ID_SOFTAP_HIGH_BAND_UNAVAILABLE,
+                makeSoftApNotificationBuilder(title, contentSummary).build());
     }
 
     /**

@@ -65,6 +65,7 @@ import com.android.server.wifi.coex.CoexManager;
 import com.android.server.wifi.coex.CoexManager.CoexListener;
 import com.android.server.wifi.nl80211.DeviceWiphyCapabilities;
 import com.android.server.wifi.util.ApConfigUtil;
+import com.android.server.wifi.util.SoftApRegdbFallback;
 import com.android.server.wifi.util.WaitingState;
 import com.android.wifi.flags.FeatureFlags;
 import com.android.wifi.resources.R;
@@ -880,6 +881,47 @@ public class SoftApManager implements ActiveModeManager {
         return false;
     }
 
+    private boolean softApConfigRequestedHighBand() {
+        if (mCurrentSoftApConfiguration == null) {
+            return false;
+        }
+        if (SdkLevel.isAtLeastS()) {
+            for (int band : mCurrentSoftApConfiguration.getBands()) {
+                if ((band & (SoftApConfiguration.BAND_5GHZ | SoftApConfiguration.BAND_6GHZ)) != 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        int band = mCurrentSoftApConfiguration.getBand();
+        return (band & (SoftApConfiguration.BAND_5GHZ | SoftApConfiguration.BAND_6GHZ)) != 0;
+    }
+
+    /**
+     * When bridged SoftAP drops the high-band instance and only 2.4 GHz remains, surface it —
+     * hotspot stays "enabled" but dual/5/6 selection did not take effect on air.
+     */
+    private void maybeNotifyHighBandSoftApDegraded() {
+        if (!softApConfigRequestedHighBand()) {
+            return;
+        }
+        boolean hasHigh = false;
+        boolean has24 = false;
+        for (SoftApInfo info : mCurrentSoftApInfoMap.values()) {
+            int freq = info.getFrequency();
+            if (ScanResult.is5GHz(freq) || ScanResult.is6GHz(freq)) {
+                hasHigh = true;
+            } else if (ScanResult.is24GHz(freq)) {
+                has24 = true;
+            }
+        }
+        if (!hasHigh && has24) {
+            Log.w(getTag(), "SoftAP high band unavailable; operating on 2.4 GHz only"
+                    + " (config requested 5/6 GHz)");
+            mSoftApNotifier.showSoftApHighBandUnavailableNotification();
+        }
+    }
+
     private boolean setCountryCode() {
         int band = mCurrentSoftApConfiguration.getBand();
         if (TextUtils.isEmpty(mCountryCode)) {
@@ -937,6 +979,11 @@ public class SoftApManager implements ActiveModeManager {
             Log.e(getTag(), "Failed to update AP band and channel");
             return startResult;
         }
+
+        // Hostapd ACS uses AllowedAcsChannels ∩ OEM overlay — not SoftApCapability alone.
+        // Propagate capability/regdb channels so Settings availability matches start.
+        SoftApRegdbFallback.applyCapabilityChannelsToAllowedAcs(
+                localConfigBuilder, mCurrentSoftApConfiguration, mCurrentSoftApCapability);
 
         if (mCurrentSoftApConfiguration.isHiddenSsid()) {
             Log.d(getTag(), "SoftAP is a hidden network");
@@ -1906,6 +1953,7 @@ public class SoftApManager implements ActiveModeManager {
                             mWifiMetrics.addSoftApInstanceDownEventInDualMode(
                                     mSpecifiedModeConfiguration.getTargetMode(), apInfo);
                         }
+                        maybeNotifyHighBandSoftApDegraded();
                     }
                     return;
                 }

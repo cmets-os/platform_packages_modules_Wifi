@@ -16,13 +16,21 @@
 
 package com.android.server.wifi.util;
 
+import static android.net.wifi.SoftApCapability.SOFTAP_FEATURE_ACS_OFFLOAD;
+import static android.net.wifi.SoftApConfiguration.BAND_2GHZ;
+import static android.net.wifi.SoftApConfiguration.BAND_5GHZ;
+import static android.net.wifi.SoftApConfiguration.BAND_6GHZ;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.wifi.ScanResult;
+import android.net.wifi.SoftApCapability;
 import android.net.wifi.SoftApConfiguration;
 import android.net.wifi.WifiAvailableChannel;
 import android.net.wifi.WifiScanner;
 import android.util.Log;
+
+import com.android.modules.utils.build.SdkLevel;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -130,6 +138,51 @@ public final class SoftApRegdbFallback {
                     SoftApConfiguration.BAND_6GHZ);
         }
         return out != null ? out : halChannels;
+    }
+
+    /**
+     * When ACS offload is used and AllowedAcsChannels are unset, copy SoftApCapability channel
+     * lists (which may already include wireless-regdb fallback) into the SoftAP config so hostapd
+     * ACS sees the same channels as Settings.
+     */
+    public static void applyCapabilityChannelsToAllowedAcs(
+            @NonNull SoftApConfiguration.Builder builder,
+            @NonNull SoftApConfiguration config,
+            @NonNull SoftApCapability capability) {
+        if (!SdkLevel.isAtLeastT()) {
+            return;
+        }
+        if (!capability.areFeaturesSupported(SOFTAP_FEATURE_ACS_OFFLOAD)) {
+            return;
+        }
+        for (int band : new int[] {BAND_2GHZ, BAND_5GHZ, BAND_6GHZ}) {
+            if (!configurationIncludesBand(config, band)) {
+                continue;
+            }
+            if (config.getAllowedAcsChannels(band).length > 0) {
+                continue;
+            }
+            int[] channels = capability.getSupportedChannelList(band);
+            if (channels == null || channels.length == 0) {
+                continue;
+            }
+            builder.setAllowedAcsChannels(band, channels);
+            Log.i(TAG, "Set AllowedAcsChannels band=" + band + " count=" + channels.length
+                    + " from SoftApCapability");
+        }
+    }
+
+    private static boolean configurationIncludesBand(
+            @NonNull SoftApConfiguration config, int band) {
+        if (SdkLevel.isAtLeastS()) {
+            for (int configured : config.getBands()) {
+                if ((configured & band) != 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return (config.getBand() & band) != 0;
     }
 
     @Nullable

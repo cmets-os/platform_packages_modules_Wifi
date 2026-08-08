@@ -25,6 +25,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.net.wifi.ScanResult;
+import android.net.wifi.SoftApCapability;
 import android.net.wifi.SoftApConfiguration;
 import android.net.wifi.WifiAvailableChannel;
 import android.net.wifi.WifiScanner;
@@ -148,5 +149,22 @@ public class SoftApRegdbFallbackTest extends WifiBaseTest {
         int[] a = SoftApRegdbChannels.get("RU", SoftApConfiguration.BAND_5GHZ);
         int[] b = SoftApRegdbFallback.channelsFor("RU", SoftApConfiguration.BAND_5GHZ);
         assertArrayEquals(a, b);
+    }
+
+    @Test
+    public void applyCapabilityChannelsToAllowedAcs_fillsEmpty5gFromCapability() {
+        SoftApCapability capability = new SoftApCapability(
+                SoftApCapability.SOFTAP_FEATURE_ACS_OFFLOAD);
+        capability.setSupportedChannelList(SoftApConfiguration.BAND_5GHZ, new int[] {36, 40});
+        SoftApConfiguration config = new SoftApConfiguration.Builder()
+                .setBand(SoftApConfiguration.BAND_5GHZ)
+                .build();
+        SoftApConfiguration.Builder builder = new SoftApConfiguration.Builder(config);
+
+        SoftApRegdbFallback.applyCapabilityChannelsToAllowedAcs(builder, config, capability);
+
+        SoftApConfiguration out = builder.build();
+        assertArrayEquals(new int[] {36, 40},
+                out.getAllowedAcsChannels(SoftApConfiguration.BAND_5GHZ));
     }
 }

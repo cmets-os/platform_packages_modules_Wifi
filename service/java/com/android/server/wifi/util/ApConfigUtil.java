@@ -341,6 +341,9 @@ public class ApConfigUtil {
         List<Integer> channelList = new ArrayList<Integer>();
 
         for (String channelRange : channelString.split(",")) {
+            if (TextUtils.isEmpty(channelRange.trim())) {
+                continue;
+            }
             try {
                 if (channelRange.contains("-")) {
                     String[] channels = channelRange.split("-");

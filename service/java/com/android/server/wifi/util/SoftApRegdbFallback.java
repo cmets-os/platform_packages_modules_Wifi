@@ -29,10 +29,12 @@ import android.net.wifi.SoftApConfiguration;
 import android.net.wifi.WifiAvailableChannel;
 import android.net.wifi.WifiScanner;
 import android.util.Log;
+import android.util.SparseIntArray;
 
 import com.android.modules.utils.build.SdkLevel;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -84,6 +86,9 @@ public final class SoftApRegdbFallback {
         int[] chans = channelsFor(countryCode, softApBand);
         if (chans == null || chans.length == 0) {
             return regulatoryList != null ? regulatoryList : Collections.emptyList();
+        }
+        if (softApBand == SoftApConfiguration.BAND_5GHZ) {
+            chans = filterSoftApSafe5g(chans);
         }
         Log.i(TAG, "Empty HAL SoftAP list for " + countryCode + " band=" + softApBand
                 + "; using wireless-regdb (" + chans.length + " channels)");
@@ -166,10 +171,126 @@ public final class SoftApRegdbFallback {
             if (channels == null || channels.length == 0) {
                 continue;
             }
+            if (band == BAND_5GHZ) {
+                channels = filterSoftApSafe5g(channels);
+            }
             builder.setAllowedAcsChannels(band, channels);
             Log.i(TAG, "Set AllowedAcsChannels band=" + band + " count=" + channels.length
-                    + " from SoftApCapability");
+                    + " from SoftApCapability"
+                    + (band == BAND_5GHZ ? " (SoftAP-safe filter)" : ""));
         }
+    }
+
+    /**
+     * When vendor HAL SoftAP 5 GHz was empty (capability filled from wireless-regdb), pin an
+     * explicit non-DFS 5 GHz channel on ACS (channel 0) band entries that include 5 GHz.
+     * Pure 2.4 GHz entries are left on ACS.
+     */
+    public static void maybePinHighBandChannelWhenHalSapEmpty(
+            @NonNull SoftApConfiguration.Builder builder,
+            @Nullable String countryCode,
+            @NonNull SoftApCapability capability) {
+        if (!SdkLevel.isAtLeastS()) {
+            return;
+        }
+        if (!shouldPinHighBandWhenHalSapEmpty(countryCode, capability)) {
+            return;
+        }
+        SoftApConfiguration staged = builder.build();
+        SparseIntArray channels = staged.getChannels();
+        SparseIntArray pinned = channels.clone();
+        boolean changed = false;
+        for (int i = 0; i < channels.size(); i++) {
+            int bandKey = channels.keyAt(i);
+            int ch = channels.valueAt(i);
+            if (ch != 0 || (bandKey & BAND_5GHZ) == 0) {
+                continue;
+            }
+            int pin = pickSoftApSafe5gChannel(staged.getAllowedAcsChannels(BAND_5GHZ));
+            if (pin > 0) {
+                pinned.put(bandKey, pin);
+                changed = true;
+                Log.i(TAG, "pin high-band SoftAP channel=" + pin
+                        + " bandKey=" + bandKey + " (HAL SAP empty)");
+            }
+        }
+        if (changed) {
+            builder.setChannels(pinned);
+        }
+    }
+
+    /**
+     * True when SoftAP 5 GHz capability matches wireless-regdb for {@code countryCode}
+     * (full or SoftAP-safe filtered), which indicates HAL SAP list was empty and resolve
+     * filled from regdb.
+     */
+    public static boolean shouldPinHighBandWhenHalSapEmpty(
+            @Nullable String countryCode, @NonNull SoftApCapability capability) {
+        int[] supported = capability.getSupportedChannelList(BAND_5GHZ);
+        if (supported == null || supported.length == 0) {
+            return false;
+        }
+        int[] regdb = channelsFor(countryCode, BAND_5GHZ);
+        if (regdb == null || regdb.length == 0) {
+            return false;
+        }
+        int[] safe = filterSoftApSafe5g(regdb);
+        return Arrays.equals(supported, regdb) || Arrays.equals(supported, safe);
+    }
+
+    /** UNII-1 + UNII-3 style non-DFS SoftAP-safe 5 GHz channels. */
+    static boolean isSoftApSafe5gChannel(int ch) {
+        return (ch >= 36 && ch <= 48) || (ch >= 149 && ch <= 165);
+    }
+
+    /**
+     * Prefer SoftAP-safe 5 GHz channels. If none are present, keep the original list
+     * (better than empty).
+     */
+    @NonNull
+    static int[] filterSoftApSafe5g(@NonNull int[] channels) {
+        int n = 0;
+        for (int ch : channels) {
+            if (isSoftApSafe5gChannel(ch)) {
+                n++;
+            }
+        }
+        if (n == 0 || n == channels.length) {
+            return channels;
+        }
+        int[] out = new int[n];
+        int i = 0;
+        for (int ch : channels) {
+            if (isSoftApSafe5gChannel(ch)) {
+                out[i++] = ch;
+            }
+        }
+        return out;
+    }
+
+    /** Preferred SoftAP pin order: UNII-1 then UNII-3 (36 before 149). */
+    private static final int[] SOFTAP_SAFE_5G_PIN_ORDER = {
+            36, 40, 44, 48, 149, 153, 157, 161, 165
+    };
+
+    /**
+     * First SoftAP-safe channel present in AllowedAcs: 36..48 then 149..165
+     * (prefer 36, else 149).
+     *
+     * @return channel number, or 0 if none
+     */
+    static int pickSoftApSafe5gChannel(@Nullable int[] allowedAcs) {
+        if (allowedAcs == null || allowedAcs.length == 0) {
+            return 0;
+        }
+        for (int preferred : SOFTAP_SAFE_5G_PIN_ORDER) {
+            for (int ch : allowedAcs) {
+                if (ch == preferred) {
+                    return preferred;
+                }
+            }
+        }
+        return 0;
     }
 
     private static boolean configurationIncludesBand(
@@ -194,6 +315,9 @@ public final class SoftApRegdbFallback {
         int[] chans = channelsFor(countryCode, softApBand);
         if (chans == null || chans.length == 0) {
             return building;
+        }
+        if (softApBand == SoftApConfiguration.BAND_5GHZ) {
+            chans = filterSoftApSafe5g(chans);
         }
         List<WifiAvailableChannel> out = building;
         if (out == null) {

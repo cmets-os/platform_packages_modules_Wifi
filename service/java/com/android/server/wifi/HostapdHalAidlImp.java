@@ -756,6 +756,15 @@ public class HostapdHalAidlImp implements IHostapdHal {
         freqRange.endMhz = ApConfigUtil.convertChannelToFrequency(prevChannel, band);
         frequencyRanges.add(freqRange);
 
+        if (!frequencyRanges.isEmpty()) {
+            FrequencyRange first = frequencyRanges.get(0);
+            FrequencyRange last = frequencyRanges.get(frequencyRanges.size() - 1);
+            Log.i(TAG, "ACS freq ranges band=" + band
+                    + " count=" + frequencyRanges.size()
+                    + " first=" + first.startMhz + "-" + first.endMhz
+                    + " last=" + last.startMhz + "-" + last.endMhz);
+        }
+
         return frequencyRanges;
     }
 

@@ -984,6 +984,10 @@ public class SoftApManager implements ActiveModeManager {
         // Propagate capability/regdb channels so Settings availability matches start.
         SoftApRegdbFallback.applyCapabilityChannelsToAllowedAcs(
                 localConfigBuilder, mCurrentSoftApConfiguration, mCurrentSoftApCapability);
+        // When HAL SAP 5 GHz was empty (regdb fallback), pin a non-DFS 5 GHz channel so
+        // hostapd ACS does not pick DFS and fail the bridged high-band instance.
+        SoftApRegdbFallback.maybePinHighBandChannelWhenHalSapEmpty(
+                localConfigBuilder, mCountryCode, mCurrentSoftApCapability);
 
         if (mCurrentSoftApConfiguration.isHiddenSsid()) {
             Log.d(getTag(), "SoftAP is a hidden network");
@@ -2264,6 +2268,9 @@ public class SoftApManager implements ActiveModeManager {
                                     mWifiNative.getBridgedApInstances(mApInterfaceName);
                                 // Check if there's any instance still active.
                                 if (instances != null && instances.size() > 0) {
+                                    // Fail-before-SoftApInfo: high-band instance can die
+                                    // without ever entering mCurrentSoftApInfoMap.
+                                    maybeNotifyHighBandSoftApDegraded();
                                     break;
                                 }
                             } else if (mCurrentSoftApInfoMap.size() == 1 && instances != null
@@ -2275,6 +2282,7 @@ public class SoftApManager implements ActiveModeManager {
                                             : mCurrentSoftApInfoMap.keySet()) {
                                         removeIfaceInstanceFromBridgedApIface(unavailableInstance);
                                     }
+                                    maybeNotifyHighBandSoftApDegraded();
                                     break;
                                 }
                             }

@@ -220,9 +220,9 @@ public final class SoftApRegdbFallback {
     }
 
     /**
-     * True when SoftAP 5 GHz capability matches wireless-regdb for {@code countryCode}
-     * (full or SoftAP-safe filtered), which indicates HAL SAP list was empty and resolve
-     * filled from regdb.
+     * True when SoftAP 5 GHz capability matches the SoftAP-safe wireless-regdb list for
+     * {@code countryCode}, which indicates HAL SAP list was empty and {@link #resolve} filled
+     * from regdb (already filtered to UNII-1/UNII-3).
      */
     public static boolean shouldPinHighBandWhenHalSapEmpty(
             @Nullable String countryCode, @NonNull SoftApCapability capability) {
@@ -235,7 +235,7 @@ public final class SoftApRegdbFallback {
             return false;
         }
         int[] safe = filterSoftApSafe5g(regdb);
-        return Arrays.equals(supported, regdb) || Arrays.equals(supported, safe);
+        return Arrays.equals(supported, safe);
     }
 
     /** UNII-1 + UNII-3 style non-DFS SoftAP-safe 5 GHz channels. */

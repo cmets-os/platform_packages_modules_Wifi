@@ -220,6 +220,12 @@ public class SoftApRegdbFallbackTest extends WifiBaseTest {
         halNonEmpty.setSupportedChannelList(SoftApConfiguration.BAND_5GHZ,
                 new int[] {149, 153});
         assertFalse(SoftApRegdbFallback.shouldPinHighBandWhenHalSapEmpty("RU", halNonEmpty));
+
+        // Full unfiltered regdb (includes DFS) must not match SoftAP-safe pin condition.
+        SoftApCapability fullRegdb = new SoftApCapability(0L);
+        fullRegdb.setSupportedChannelList(SoftApConfiguration.BAND_5GHZ,
+                SoftApRegdbFallback.channelsFor("RU", SoftApConfiguration.BAND_5GHZ));
+        assertFalse(SoftApRegdbFallback.shouldPinHighBandWhenHalSapEmpty("RU", fullRegdb));
     }
 
     @Test

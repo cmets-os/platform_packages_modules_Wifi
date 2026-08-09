@@ -898,10 +898,15 @@ public class SoftApManager implements ActiveModeManager {
     }
 
     /**
-     * When bridged SoftAP drops the high-band instance and only 2.4 GHz remains, surface it —
+     * When SoftAP drops the high-band instance and continues without 5/6 GHz, surface it —
      * hotspot stays "enabled" but dual/5/6 selection did not take effect on air.
+     *
+     * @param survivingBridgedInstances true when bridged SoftAP still has remaining instances
+     *     after a failed instance was dropped (covers fail-before-SoftApInfo races where the
+     *     map may not yet hold 2.4 GHz SoftApInfo). False when only SoftApInfo evidence is used
+     *     (e.g. high-band SoftApInfo removed while 2.4 SoftApInfo remains).
      */
-    private void maybeNotifyHighBandSoftApDegraded() {
+    private void maybeNotifyHighBandSoftApDegraded(boolean survivingBridgedInstances) {
         if (!softApConfigRequestedHighBand()) {
             return;
         }
@@ -915,7 +920,12 @@ public class SoftApManager implements ActiveModeManager {
                 has24 = true;
             }
         }
-        if (!hasHigh && has24) {
+        if (hasHigh) {
+            return;
+        }
+        // Notify when 2.4 SoftApInfo is present, or when bridged AP clearly continues after
+        // dropping a high-band instance even if SoftApInfoMap is still empty.
+        if (has24 || survivingBridgedInstances) {
             Log.w(getTag(), "SoftAP high band unavailable; operating on 2.4 GHz only"
                     + " (config requested 5/6 GHz)");
             mSoftApNotifier.showSoftApHighBandUnavailableNotification();
@@ -1957,7 +1967,7 @@ public class SoftApManager implements ActiveModeManager {
                             mWifiMetrics.addSoftApInstanceDownEventInDualMode(
                                     mSpecifiedModeConfiguration.getTargetMode(), apInfo);
                         }
-                        maybeNotifyHighBandSoftApDegraded();
+                        maybeNotifyHighBandSoftApDegraded(false /* survivingBridgedInstances */);
                     }
                     return;
                 }
@@ -2270,7 +2280,8 @@ public class SoftApManager implements ActiveModeManager {
                                 if (instances != null && instances.size() > 0) {
                                     // Fail-before-SoftApInfo: high-band instance can die
                                     // without ever entering mCurrentSoftApInfoMap.
-                                    maybeNotifyHighBandSoftApDegraded();
+                                    maybeNotifyHighBandSoftApDegraded(
+                                            true /* survivingBridgedInstances */);
                                     break;
                                 }
                             } else if (mCurrentSoftApInfoMap.size() == 1 && instances != null
@@ -2282,7 +2293,8 @@ public class SoftApManager implements ActiveModeManager {
                                             : mCurrentSoftApInfoMap.keySet()) {
                                         removeIfaceInstanceFromBridgedApIface(unavailableInstance);
                                     }
-                                    maybeNotifyHighBandSoftApDegraded();
+                                    maybeNotifyHighBandSoftApDegraded(
+                                            true /* survivingBridgedInstances */);
                                     break;
                                 }
                             }

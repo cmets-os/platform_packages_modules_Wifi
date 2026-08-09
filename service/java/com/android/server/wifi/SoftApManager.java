@@ -2296,12 +2296,20 @@ public class SoftApManager implements ActiveModeManager {
                                 if (!mCurrentSoftApInfoMap.containsKey(instances.get(0))) {
                                     // there is an available instance but the info doesn't be
                                     // updated, keep AP on and remove unavailable instance info.
+                                    SoftApInfo staleInfo = mCurrentSoftApInfoMap.values()
+                                            .iterator().next();
+                                    final boolean staleKnown24Ghz = staleInfo != null
+                                            && ScanResult.is24GHz(staleInfo.getFrequency());
                                     for (String unavailableInstance
                                             : mCurrentSoftApInfoMap.keySet()) {
                                         removeIfaceInstanceFromBridgedApIface(unavailableInstance);
                                     }
-                                    maybeNotifyHighBandSoftApDegraded(
-                                            true /* survivingBridgedInstances */);
+                                    // Skip when sole stale SoftApInfo is 2.4 — surviving native
+                                    // instance may still be bringing up 5/6.
+                                    if (!staleKnown24Ghz) {
+                                        maybeNotifyHighBandSoftApDegraded(
+                                                true /* survivingBridgedInstances */);
+                                    }
                                     break;
                                 }
                             }

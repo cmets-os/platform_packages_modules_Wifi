@@ -2273,15 +2273,22 @@ public class SoftApManager implements ActiveModeManager {
                                     mWifiNative.getBridgedApInstances(mApInterfaceName);
                             if (instance != null) {
                                 Log.i(getTag(), "receive instanceFailure on " + instance);
+                                // Inspect SoftApInfo before drop: a known 2.4 failure must not
+                                // trigger high-band degrade while 5/6 may still be coming up.
+                                SoftApInfo failedInfo = mCurrentSoftApInfoMap.get(instance);
+                                final boolean failedKnown24Ghz = failedInfo != null
+                                        && ScanResult.is24GHz(failedInfo.getFrequency());
                                 removeIfaceInstanceFromBridgedApIface(instance);
                                 instances =
                                     mWifiNative.getBridgedApInstances(mApInterfaceName);
                                 // Check if there's any instance still active.
                                 if (instances != null && instances.size() > 0) {
-                                    // Fail-before-SoftApInfo: high-band instance can die
-                                    // without ever entering mCurrentSoftApInfoMap.
-                                    maybeNotifyHighBandSoftApDegraded(
-                                            true /* survivingBridgedInstances */);
+                                    if (!failedKnown24Ghz) {
+                                        // Known 5/6 SoftApInfo failure, or fail-before-info
+                                        // (rango high-band die with empty SoftApInfoMap).
+                                        maybeNotifyHighBandSoftApDegraded(
+                                                true /* survivingBridgedInstances */);
+                                    }
                                     break;
                                 }
                             } else if (mCurrentSoftApInfoMap.size() == 1 && instances != null

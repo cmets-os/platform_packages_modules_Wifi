@@ -251,7 +251,88 @@ public class SoftApRegdbFallbackTest extends WifiBaseTest {
 
         SoftApConfiguration out = builder.build();
         android.util.SparseIntArray outCh = out.getChannels();
+        assertEquals(2, outCh.size());
         assertEquals(0, outCh.get(SoftApConfiguration.BAND_2GHZ));
-        assertEquals(36, outCh.get(SoftApConfiguration.BAND_2GHZ | SoftApConfiguration.BAND_5GHZ));
+        assertEquals(36, outCh.get(SoftApConfiguration.BAND_5GHZ));
+        assertTrue(outCh.indexOfKey(SoftApConfiguration.BAND_2GHZ
+                | SoftApConfiguration.BAND_5GHZ) < 0);
+    }
+
+    @Test
+    public void maybePinHighBandChannelWhenHalSapEmpty_singleCombinedBand_pins5gOnly() {
+        SoftApCapability capability = new SoftApCapability(
+                SoftApCapability.SOFTAP_FEATURE_ACS_OFFLOAD);
+        List<Integer> fromRegdb = SoftApRegdbFallback.resolve(
+                Collections.emptyList(), "RU", SoftApConfiguration.BAND_5GHZ, false);
+        capability.setSupportedChannelList(SoftApConfiguration.BAND_5GHZ,
+                fromRegdb.stream().mapToInt(Integer::intValue).toArray());
+
+        SoftApConfiguration config = new SoftApConfiguration.Builder()
+                .setBand(SoftApConfiguration.BAND_2GHZ | SoftApConfiguration.BAND_5GHZ)
+                .build();
+        SoftApConfiguration.Builder builder = new SoftApConfiguration.Builder(config);
+        SoftApRegdbFallback.applyCapabilityChannelsToAllowedAcs(builder, config, capability);
+        SoftApRegdbFallback.maybePinHighBandChannelWhenHalSapEmpty(builder, "RU", capability);
+
+        SoftApConfiguration out = builder.build();
+        android.util.SparseIntArray outCh = out.getChannels();
+        assertEquals(1, outCh.size());
+        assertEquals(36, outCh.get(SoftApConfiguration.BAND_5GHZ));
+    }
+
+    @Test
+    public void maybePinHighBandChannelWhenHalSapEmpty_leaves6gSingleCombinedUnchanged() {
+        SoftApCapability capability = ruHalEmptyCapability();
+        int combined = SoftApConfiguration.BAND_2GHZ | SoftApConfiguration.BAND_5GHZ
+                | SoftApConfiguration.BAND_6GHZ;
+        SoftApConfiguration config = new SoftApConfiguration.Builder()
+                .setBand(combined)
+                .build();
+        SoftApConfiguration.Builder builder = new SoftApConfiguration.Builder(config);
+        SoftApRegdbFallback.applyCapabilityChannelsToAllowedAcs(builder, config, capability);
+        SoftApRegdbFallback.maybePinHighBandChannelWhenHalSapEmpty(builder, "RU", capability);
+
+        SoftApConfiguration out = builder.build();
+        android.util.SparseIntArray outCh = out.getChannels();
+        assertEquals(1, outCh.size());
+        assertEquals(0, outCh.get(combined));
+        assertTrue(outCh.indexOfKey(SoftApConfiguration.BAND_5GHZ) < 0);
+    }
+
+    @Test
+    public void maybePinHighBandChannelWhenHalSapEmpty_leavesBridged2g6gUnchanged() {
+        SoftApCapability capability = ruHalEmptyCapability();
+        int high = SoftApConfiguration.BAND_2GHZ | SoftApConfiguration.BAND_5GHZ
+                | SoftApConfiguration.BAND_6GHZ;
+        android.util.SparseIntArray channels = new android.util.SparseIntArray();
+        channels.put(SoftApConfiguration.BAND_2GHZ, 0);
+        channels.put(high, 0);
+        SoftApConfiguration config = new SoftApConfiguration.Builder()
+                .setChannels(channels)
+                .build();
+        SoftApConfiguration.Builder builder = new SoftApConfiguration.Builder(config);
+        SoftApRegdbFallback.applyCapabilityChannelsToAllowedAcs(builder, config, capability);
+        SoftApRegdbFallback.maybePinHighBandChannelWhenHalSapEmpty(builder, "RU", capability);
+
+        SoftApConfiguration out = builder.build();
+        android.util.SparseIntArray outCh = out.getChannels();
+        assertEquals(2, outCh.size());
+        assertEquals(0, outCh.get(SoftApConfiguration.BAND_2GHZ));
+        assertEquals(0, outCh.get(high));
+        assertTrue(outCh.indexOfKey(SoftApConfiguration.BAND_5GHZ) < 0);
+    }
+
+    private static SoftApCapability ruHalEmptyCapability() {
+        SoftApCapability capability = new SoftApCapability(
+                SoftApCapability.SOFTAP_FEATURE_ACS_OFFLOAD);
+        List<Integer> fromRegdb = SoftApRegdbFallback.resolve(
+                Collections.emptyList(), "RU", SoftApConfiguration.BAND_5GHZ, false);
+        capability.setSupportedChannelList(SoftApConfiguration.BAND_5GHZ,
+                fromRegdb.stream().mapToInt(Integer::intValue).toArray());
+        capability.setSupportedChannelList(SoftApConfiguration.BAND_2GHZ,
+                new int[] {1, 6, 11});
+        capability.setSupportedChannelList(SoftApConfiguration.BAND_6GHZ,
+                new int[] {5, 21, 37});
+        return capability;
     }
 }

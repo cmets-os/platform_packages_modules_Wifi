@@ -198,24 +198,47 @@ public final class SoftApRegdbFallback {
         }
         SoftApConfiguration staged = builder.build();
         SparseIntArray channels = staged.getChannels();
-        SparseIntArray pinned = channels.clone();
-        boolean changed = false;
+        int pin = 0;
+        boolean needPin = false;
+        for (int i = 0; i < channels.size(); i++) {
+            int bandKey = channels.keyAt(i);
+            if (channels.valueAt(i) == 0 && (bandKey & BAND_5GHZ) != 0
+                    && (bandKey & BAND_6GHZ) == 0) {
+                needPin = true;
+                break;
+            }
+        }
+        if (!needPin) {
+            return;
+        }
+        pin = pickSoftApSafe5gChannel(staged.getAllowedAcsChannels(BAND_5GHZ));
+        if (pin <= 0) {
+            return;
+        }
+        SparseIntArray pinned = new SparseIntArray();
+        boolean placed5 = false;
         for (int i = 0; i < channels.size(); i++) {
             int bandKey = channels.keyAt(i);
             int ch = channels.valueAt(i);
-            if (ch != 0 || (bandKey & BAND_5GHZ) == 0) {
-                continue;
-            }
-            int pin = pickSoftApSafe5gChannel(staged.getAllowedAcsChannels(BAND_5GHZ));
-            if (pin > 0) {
-                pinned.put(bandKey, pin);
-                changed = true;
-                Log.i(TAG, "pin high-band SoftAP channel=" + pin
-                        + " bandKey=" + bandKey + " (HAL SAP empty)");
+            if (ch == 0 && (bandKey & BAND_5GHZ) != 0 && (bandKey & BAND_6GHZ) == 0) {
+                if (!placed5) {
+                    pinned.put(BAND_5GHZ, pin);
+                    placed5 = true;
+                }
+            } else {
+                pinned.put(bandKey, ch);
             }
         }
-        if (changed) {
+        if (pinned.size() == 0 || pinned.size() > 2) {
+            Log.e(TAG, "skip SoftAP 5 GHz pin: unsupported channel map size=" + pinned.size());
+            return;
+        }
+        try {
             builder.setChannels(pinned);
+            Log.i(TAG, "pin high-band SoftAP channel=" + pin
+                    + " on BAND_5GHZ (HAL SAP empty)");
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "skip invalid SoftAP 5 GHz pin channel=" + pin, e);
         }
     }
 
